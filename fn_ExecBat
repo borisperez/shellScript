@@ -1,0 +1,118 @@
+blk=$(tput blink)
+bol=$(tput bold)
+nul=$(tput sgr0)
+rev=$(tput rev)
+apg=$(tput dim)
+integer v_Opcao
+integer v_Nivel=1
+integer v_Count=0
+integer v_Ret=1
+integer v_Line=0
+v_Lado1="TRUE"
+a_apoio2=/home/sql_apoio/diretorio1.${$}
+#d_Diretorio[$v_Nivel]=/dwh/producao
+d_Diretorio[$v_Nivel]=/
+function fn_CarregaDiretorio
+{
+v_Line=0
+ls -la ${d_Diretorio[$v_Nivel]} | awk '{ a=substr($1,1,1) ;if ( a == "d"  ) print $9 }' > ${a_apoio2}
+fn_TelaPrin
+v_Count=`wc -l ${a_apoio2} | awk '{ print $1 }'`
+while read line
+do
+v_Line=v_Line+1
+	if [ ! $v_Count -gt 15 ]
+	then
+             print "                    \n\t\t                    ${bol} $v_Line ${apg} ${nul} - ${line}"
+	else
+		if [ $v_Lado1 = TRUE ]
+		then
+			print "                     ${bol} $v_Line ${apg}${nul} - ${line}\c"
+			v_Lado1=FALSE
+		else
+			print "                     ${bol} $v_Line ${apg}${nul} - ${line}"
+			v_Lado1=TRUE
+		fi
+        fi
+done < ${a_apoio2}
+print "                    \n\t\t                    ${bol} . ${nul} - FIM"
+print "\n\t          Escolha o diretorio e tecle" $(tput bold) "ENTER:" $(tput sgr0) "\c"
+}
+function fn_TelaPrin
+{
+clear
+print "+\c";fn_Repeat 78 -;print "+"
+print "|        S I S T E M A   D E   C O N T R O L E   D E   E X E C U C A O         |"
+print "|   $(date +%d/%m/%Y)         $(tput blink)   Administracao Carga DATA WAREHOUSE $(tput sgr0)           $(date +%H:%M)  |"
+print "+\c";fn_Repeat 78 -;print "+"
+echo; echo
+}
+function fn_Repeat
+{
+v_Repeat=""
+integer v_i=1
+integer v_r=$1
+while (( $v_i <= $v_r ))
+do
+        v_Repeat="${v_Repeat}${2}"
+        v_i=$v_i+1
+done
+echo "$v_Repeat\c"
+return
+}
+while [ $v_Ret = 1 ]
+do
+        fn_CarregaDiretorio
+        read v_Opcao
+        if [ $? -ne 0 ] || (( $v_Opcao < 0 )) || (( $v_Opcao > $(wc -l ${a_apoio2} | tr -s ' ' ':' | cut -f2 -d':' ) ))
+        then
+                v_Erro=$v_Erro+1
+                if (( $v_Erro > 3 ))
+                then
+                        if (( $v_Nivel == 1 ))
+                        then
+                                break
+                        else
+                                d_Diretorio[$v_Nivel]=""
+                                v_Nivel=v_Nivel-1
+                                continue
+                         fi
+                fi
+                fn_Mensagem "Entre com um número válido, tentativa [$v_Erro de 3]"
+                continue
+        else
+                v_Erro=0
+        fi
+        if (( $v_Opcao == 0 ))
+        then
+                if (( $v_Nivel == 1 ))
+                then
+                        break
+                else
+                        d_Diretorio[$v_Nivel]=""
+                        v_Nivel=v_Nivel-1
+                        continue
+                fi
+        else
+                v_Objeto=${d_Diretorio[$v_Nivel]}/`head -$v_Opcao ${a_apoio2} | tail -1`
+                if [ -d $v_Objeto ]
+                then
+                        if  [ $( find $v_Objeto -name *.menu 2>/dev/null | wc -l ) = 0 ]
+                        then
+                                fn_Mensagem "Esta opcao esta em construcao!!!"
+                                continue
+                        fi
+                        v_Nivel=v_Nivel+1
+                        d_Diretorio[$v_Nivel]=/$v_Objeto
+
+                else
+                        if [ -f $v_Objeto ]
+                        then
+                                . $v_Objeto
+                        else
+                                fn_Mensagem "Objeto nao e valido"
+                        fi
+                fi
+        fi
+done
+#fn_fim_menu

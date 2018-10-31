@@ -1,0 +1,60 @@
+#!/usr/bin/ksh
+###########################################################################################
+## Script     : sc_VeRestart
+## Autor      : Alam(InforBras)
+## Finalidade : 
+## Parametros : $1 -> Arquivo que contem os scripts a serem processados
+## Retorno    : 
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              29/02/00 | Codigo Horiginal
+###########################################################################################
+   if [ $NRO_SS_PRODUCAO_FF ]
+   then
+           export NRO_SS_PRODUCAO=$NRO_SS_PRODUCAO_FF
+   else
+           echo "Informe o N. SS"
+           read NRO_SS_PRODUCAO
+           export NRO_SS_PRODUCAO
+   fi
+   integer i=0
+   export RC=0
+   export v_Processo=`fn_SetStart $USUARIO_SENHA $COD_EMPRESA "SCRIPT-$AREA" "SCRIPT-$PROCESSO" $REF_EXECUCAO`
+   echo "V_Processo= $v_Processo"
+   if [ ${v_Processo} = "-1" ]
+   then
+	echo "Processo com erro, local do erro fn_SetStart para esta referencia processo ja executado v_Processo=${v_Processo} " 
+		sleep 2
+		return 1
+   fi
+	if [ $RC -ne 0 ]
+	then
+		echo "Processo com erro, local do erro fn_SetStart para esta referencia RC= ${RC} " 
+		sleep 2
+		return 1
+	fi
+	export v_Restart=`fn_GetRestart $USUARIO_SENHA $v_Processo`
+        echo "Valor do Restart $v_Restart " 
+	if [ ${v_Restart} = "-1" ]
+	then
+	## nao houve execuçao nenhuma
+		export v_Restart=0
+	else
+		## O processo foi interrompido e devera ser re-iniciado
+		RC=$?
+		echo "Atencao existe execucao pendente para este processamento, escolha uma das opcoes abaixo:"
+		echo "A) Continuar a partir do ultimo programa executado"
+		echo "B) Continuar e ignorar o ultimo programa executado"
+		echo "C) Iniciar do primeiro programa executado"
+		echo ""
+		echo "Informe a opcao desejada: \c"
+		read v_opcao
+		case ${v_opcao} in
+		A|a) export v_Ignore=0 ; export RC=0     ;;
+		B|b) export v_Restart=`echo "${v_Restart}+1" | bc` ;export  RC=0    ;;
+		C|c) export v_Restart=0   ; export RC=0  ;;
+		*)      echo "Opcao inválida"
+			return 1;;
+		esac
+	fi
+return $?

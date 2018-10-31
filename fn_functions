@@ -1,0 +1,548 @@
+#!/usr/bin/ksh
+###########################################################################################
+## Function   : fn_RMarq
+## Autor      : Alam(InforBras)
+## Finalidade : Remove arquivo
+## Parametros : $1 -> Arquivo que deverá ser removido
+## Retorno    : Retorna o resultado da execucao
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              24/01/00 | Codigo Horiginal
+###########################################################################################
+fn_RMarq ()
+{
+a_ArqExec=$1
+sleep 1
+rm -f $a_ArqExec 
+return $?
+}
+###########################################################################################
+## Function   : fn_sqlplus
+## Autor      : Alam(InforBras)
+## Finalidade : Executar uma pl_Sql partindo do AIX
+## Parametros : $1 -> Usuário/Senha@PID
+##              $2 -> Diretório e pl_sql que deverá ser executada
+##              $3 -> Parametro necessário para a pl_sql
+## Retorno    : $? resultado da execução do sqlplus
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              09/10/99 | Codigo Horiginal
+###########################################################################################
+fn_ExecPL_SQL()
+{
+a_UserSenhaPID=$1
+a_ArqExec=$2
+a_Parametros="$3"
+##
+	user=`whoami`
+        parfile="/home/sql_apoio/parfile.par.$user.${$}"
+	echo "whenever sqlerror exit SQL.SQLCODE" > $parfile
+        echo "conn $a_UserSenhaPID" >> $parfile
+	chmod 700 $parfile
+#        echo "/" >> $parfile
+#        echo "/" >> $parfile
+        echo "@$a_ArqExec $a_Parametros" >> $parfile
+        sqlplus -s /nolog @$parfile 
+        RC=$?
+	if [ $RC -ne 0 ]
+	then
+		echo "Erro ao executar pl_sql $a_ArqExec, Parametros= $a_Parametros"
+	fi
+	fn_RMarq $parfile	
+	return $RC
+}
+###########################################################################################
+## Function   : fn_ExecSQLLDR
+## Autor      : Alam(InforBras)
+## Finalidade : Faz o loader de uma rotina
+## Parametros : $1 -> Usuário/Senha@PID
+##              $2 -> Diretório e pl_sql que deverá ser executada
+##              $3 -> Parametro necessário para a pl_sql
+## Retorno    : $? resultado da execução do sqlplus
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              13/01/00 | Codigo Horiginal
+###########################################################################################
+fn_ExecSQLLDR()
+{
+a_UserSenhaPID=$1
+a_ArqLDR=$2
+##
+        user=`whoami`
+        parfile="/home/sql_apoio/parfileLDR.par.$user.${$}"
+	echo "USERID = $a_UserSenhaPID" > $parfile
+        echo "CONTROL = ${a_ArqLDR}.ctl" >> $parfile
+        echo "LOG = ${a_ArqLDR}.log" >> $parfile
+        echo "BAD = ${a_ArqLDR}.bad" >> $parfile
+        echo "DATA = ${a_ArqLDR}.dat" >> $parfile
+        echo "ERRORS = 10" >> $parfile
+        echo "DIRECT = true" >> $parfile
+        if [ -f ${a_ArqLDR}.log ]
+        then
+           rm -f ${a_ArqLDR}.log
+        fi
+        if  [ -f ${a_ArqLDR}.bad ]
+        then
+           rm -f ${a_ArqLDR}.bad
+        fi
+        sqlldr parfile=$parfile
+        RC=$?
+        rm -f $parfile >> /dev/null
+        return $RC
+}
+###########################################################################################
+## Function   : fn_SQLLDRnoDirect
+## Autor      : Alam(InforBras)
+## Finalidade : Faz o loader de uma rotina
+## Parametros : $1 -> Usuário/Senha@PID
+##              $2 -> Diretório e pl_sql que deverá ser executada
+##              $3 -> Parametro necessário para a pl_sql
+## Retorno    : $? resultado da execução do sqlplus
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              13/01/00 | Codigo Horiginal
+###########################################################################################
+fn_SQLLDRnoDirect()
+{
+a_UserSenhaPID=$1
+a_ArqLDR=$2
+##
+        user=`whoami`
+        parfile="/home/sql_apoio/parfileLDR.par.$user.${$}"
+        echo "USERID = $a_UserSenhaPID" > $parfile
+        echo "CONTROL = ${a_ArqLDR}.ctl" >> $parfile
+        echo "LOG = ${a_ArqLDR}.log" >> $parfile
+        echo "BAD = ${a_ArqLDR}.bad" >> $parfile
+        echo "DATA = ${a_ArqLDR}.dat" >> $parfile
+        echo "ERRORS = 10" >> $parfile
+        if [ -f ${a_ArqLDR}.log ]
+        then
+           rm -f ${a_ArqLDR}.log
+        fi
+        if  [ -f ${a_ArqLDR}.bad ]
+        then
+           rm -f ${a_ArqLDR}.bad
+        fi
+        sqlldr parfile=$parfile
+        RC=$?
+        rm -f $parfile >> /dev/null
+        return $RC
+}
+###########################################################################################
+## Function   : fn_SQLLDR
+## Autor      : Alam(InforBras)
+## Finalidade : Faz o loader de uma rotina
+## Parametros : $1 -> Usuário/Senha@PID
+##              $2 -> Diretório e pl_sql que deverá ser executada
+##              $3 -> Parametro necessário para a pl_sql
+## Retorno    : $? resultado da execução do sqlplus
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              13/01/00 | Codigo Horiginal
+###########################################################################################
+fn_SQLLDR()
+{
+a_UserSenhaPID=$1
+a_ArqLDR=$2
+integer a_LinhaCarga=$3
+##
+        user=`whoami`
+        parfile="/home/sql_apoio/parfileLDR.par.$user.${$}"
+        echo "USERID = $a_UserSenhaPID" > $parfile
+        echo "CONTROL = ${a_ArqLDR}.ctl" >> $parfile
+        echo "LOG = ${a_ArqLDR}.log" >> $parfile
+        echo "BAD = ${a_ArqLDR}.bad" >> $parfile
+        echo "DATA = ${a_ArqLDR}.dat" >> $parfile
+        echo "LOAD = ${a_LinhaCarga}" >> $parfile
+        echo "ERRORS = 10" >> $parfile
+        echo "DIRECT = true" >> $parfile
+        if [ -f ${a_ArqLDR}.log ]
+        then
+           rm -f ${a_ArqLDR}.log
+        fi
+        if  [ -f ${a_ArqLDR}.bad ]
+        then
+           rm -f ${a_ArqLDR}.bad
+        fi
+        sqlldr parfile=$parfile
+        RC=$?
+        rm -f $parfile >> /dev/null
+        return $RC
+}
+###########################################################################################
+## Function   : fn_GetProcesso
+## Autor      : Alam(InforBras)
+## Finalidade : Verifica o código de execução de uma rotina
+## Parametros : $1 -> Usuário/Senha@PID
+##              $2 -> Empresa
+##              $3 -> Área
+##              $4 -> Etapa
+##              $5 -> Mes_Ano
+## Devolucao  : Numero do processo executado
+## Retorno    : $?
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              12/01/00 | Codigo Horiginal
+###########################################################################################
+fn_GetProcesso()
+{
+a_UserSenhaPID=$1
+a_EMPRESA=$2
+a_AREA=$3
+a_ETAPA=$4
+a_MES_ANO=$5
+v_NumProcesso=`fn_ExecPL_SQL ${a_UserSenhaPID}  /home/eccocav/log_restart/pl_s/pl_GetLog "$a_EMPRESA $a_AREA $_ETAPA $a_MES_ANO" | head -2 | tail -1 `
+RC=$?
+echo $v_NumProcesso
+return $RC
+}
+###########################################################################################
+## Function   : fn_GetRestart
+## Autor      : Alam(InforBras)
+## Finalidade : verifica se uma determinada rotina ja foi executada
+## Parametros : $1 -> Usuário/Senha@PID
+##              $2 -> Numero do processo da rotina Log e Restart
+## Retorno    : Sequencia da última execucao para restart, caso seja -1 não encontrou o processo
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              13/01/00 | Codigo Horiginal
+###########################################################################################
+fn_GetRestart()
+{
+a_UserSenhaPID=$1
+a_num_Processo=$2
+v_restart=`fn_ExecPL_SQL ${a_UserSenhaPID}  /home/eccocav/log_restart/pl_s/pl_GetRestart "$a_num_Processo" | head -2 | tail -1`
+## RC=$?
+echo $v_restart
+## return $RC
+}
+###########################################################################################
+## Function   : fn_SetStart
+## Autor      : Alam(InforBras)
+## Finalidade : Seta Execução de uma rotina
+## Parametros : $1 -> Usuário/Senha@PID
+##              $2 -> Empresa
+##              $3 -> Área
+##              $4 -> Nome do processo
+##              $5 -> Referencia da execucao
+## Retorno    : Retorna o codigo do processo caso o processo seja -1 hove erro na pl_SetStart
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              09/10/99 | Codigo Horiginal
+###########################################################################################
+fn_SetStart()
+{
+a_UserSenhaPID=$1
+a_EMPRESA=$2
+a_AREA=$3
+a_Processo=$4
+a_Ref=$5
+v_NumProcesso=`fn_ExecPL_SQL ${a_UserSenhaPID}  /home/eccocav/log_restart/pl_s/pl_SetStart "$a_EMPRESA $a_AREA $a_Processo $a_Ref" | head -2 | tail -1`
+RC=$?
+echo $v_NumProcesso
+return RC
+}
+###########################################################################################
+## Function   : fn_SetStop
+## Autor      : Alam(InforBras)
+## Finalidade : Seta Execução de uma rotina
+## Parametros : $1 -> Usuário/Senha@PID
+##              $2 -> Numero do processo
+## Retorno    : $? resultado da execução do sqlplus
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              09/10/99 | Codigo Horiginal
+###########################################################################################
+fn_SetStop()
+{
+a_UserSenhaPID=$1
+a_num_Processo=$2
+fn_ExecPL_SQL ${a_UserSenhaPID}  /home/eccocav/log_restart/pl_s/pl_SetStop "$a_num_Processo"
+RC=$?
+return $RC
+}
+###########################################################################################
+## Function   : fn_SetFimTrans
+## Autor      : Alam(InforBras)
+## Finalidade : Seta Execução de uma rotina
+## Parametros : $1 -> Usuário/Senha@PID
+##              $2 -> Numero do processo
+##              $3 -> Valor do restart
+## Retorno    : $? resultado da execução do sqlplus
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              09/10/99 | Codigo Horiginal
+###########################################################################################
+fn_SetFimTrans()
+{
+a_UserSenhaPID=$1
+a_num_Processo=$2
+a_vlr_restart=$3
+fn_ExecPL_SQL ${a_UserSenhaPID}  /home/eccocav/log_restart/pl_s/pl_SetFimTrans "$a_num_Processo $a_vlr_restart"
+RC=$?
+return $RC
+}
+###########################################################################################
+## Function   : fn_ContaLinhas
+## Autor      : Alam(InforBras)
+## Finalidade : Seta Execução de uma rotina
+## Parametros : $1 -> Arquivo
+## Retorno    : 0 Ok
+##              1 Erro
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              09/10/99 | Codigo Horiginal
+###########################################################################################
+function fn_ContaLinhas
+{
+if [ -f $1 ]
+then
+	nr_lin=$(wc -l $1 | tr -s ' ' ':' | cut -f2 -d':' )
+	echo $nr_lin
+	return 0
+else
+	return 1
+fi
+}
+###########################################################################################
+## Function   : fn_ConfFTP
+## Autor      : Alam(InforBras)
+## Finalidade : Faz a conferencia das linhas do arquivo FTP , depois exclui a ultima lina 
+##              do arquivo, caso a quantida de linhas confira
+## Parametros : $1 -> Arquivo
+## Retorno    : 0 -> Tudo OK
+##              1 -> Arquivo não encontrado
+##              2 -> Quantidade de linhas nao confere
+##		3 -> Não gerou o arquivo
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              09/10/99 | Codigo Horiginal
+###########################################################################################
+function fn_ConfFTP
+{
+if [ -f $1 ]
+then
+	v_arquivo=$1
+	integer v_qt_linhas1=`tail -1 ${v_arquivo} | cut -b -4-20 -n`
+	integer v_qt_linhas2=`fn_ContaLinhas ${v_arquivo}`
+	v_qt_linhas2=`echo "${v_qt_linhas2}-1" | bc`
+	if [ ${v_qt_linhas1} = ${v_qt_linhas2} ]
+	then
+		## Retirar a quantidade de linhas do arquivo
+		head -${v_qt_linhas1} ${v_arquivo} > ${v_arquivo}.tmp
+		if [ $? = 0 ]
+		then
+			rm -f ${v_arquivo}
+			if [ $? = 0 ]
+			then
+				mv ${v_arquivo}.tmp ${v_arquivo}
+	 			if [ $? = 0 ]
+				then
+					return 0
+				else
+					echo "Algum problema ocorreu ao tentar mover o arquivo ${v_arquivo}.tmp para o arquivo ${v_arquivo}"
+				fi
+			else
+				echo "Algum problema ocorreu ao tentar remover o arquivo"
+				return 4
+			fi
+		else
+			echo "Algum problema ocorreu ao tentar gerar o arquivo sem a quantidade de linhas"
+			return 3
+		fi
+	else
+		echo "A quantidade de linhas não confere"
+		return 2
+	fi
+else
+	echo "Arquivo não encontrado"
+        return 1
+fi
+}
+###########################################################################################
+## Function   : fn_Processa
+## Autor      : Alam(InforBras)
+## Finalidade : Processa um conjunto de scripts definidos em um arquivo
+## Parametros : $1 -> Arquivo que contem os scripts a serem processados
+## Retorno    : 
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              09/10/99 | Codigo Horiginal
+###########################################################################################
+function fn_Processa
+{
+a_Controle=$1
+integer v_LinhaProcesso=0
+v_MostouMensagem=false
+v_MostouMensagem2=false
+if [ -f $a_Controle ]
+then
+	integer i=0
+	export RC=0
+	v_Processo=`fn_SetStart $USUARIO_SENHA $COD_EMPRESA "SCRIPT-$AREA" "SCRIPT-$PROCESSO" $REF_EXECUCAO`
+	if [ ${v_Processo} = "-1" ]
+	then
+		echo "Processo com erro, local do erro fn_SetStart para esta referencia v_Processo=${v_Processo} "
+		return 1
+	fi
+	if [ $RC -ne 0 ]
+	then
+		echo "Processo com erro, local do erro fn_SetStart para esta referencia RC= ${RC} "
+		return 1
+	fi
+	v_Restart=`fn_GetRestart $USUARIO_SENHA $v_Processo`
+        echo "Valor do Restart $v_Restart "
+	if [ ${v_Restart} = "-1" ]
+	then
+	## nao houve execuçao nenhuma
+		v_Restart=0
+	else
+		## O processo foi interrompido e devera ser re-iniciado
+		RC=$?
+		#if [ $RC -ge 0 ]
+		#then
+			#echo "Erro-> ${v_restart} -> $RC"
+			#echo "Processo interrompido devido erro"
+			#return 1
+		#fi
+		echo "Atencao existe execução pendente para este processamento, escolha uma das opcoes abaixo:"
+		echo "A) Continuar a partir do ultimo programa executado"
+		echo "B) Continuar e ignorar o ultimo programa executado"
+		echo "C) Iniciar do primeiro programa executado"
+		echo ""
+		echo "Informe a opcao desejada: \c"
+		read v_opcao
+		case ${v_opcao} in
+		A|a) v_Ignore=0      ;;
+		B|b) v_Restart=`echo "${v_Restart}+1" | bc`     ;;
+		C|c) v_Restart=0     ;;
+		*)      echo "Opcao inválida"
+			return 1;;
+		esac
+	fi
+	while read -r v_Line
+	do
+		v_LinhaProcesso=v_LinhaProcesso+1
+		integer v_ColunaParametro=0
+		for e in $(echo $v_Line | sed s/" "/"¨"/g | sed s/";"/" "/g | sed s/"\."/"~"/g )
+		do
+			v_ColunaParametro=v_ColunaParametro+1
+			case $v_ColunaParametro in
+				1) v_Script=`echo ${e%%.*} | sed s/"~"/"\."/g`;;
+				2) v_Programa=${e%%.*};;
+				3) v_Tabela=`echo ${e%%.*} | sed s/"¨"/" "/g`;;
+			esac
+		done
+		if [ ! -f $v_Script ]
+		then
+			echo "Erro Script nao encontrado $v_Script"	
+			return 1
+		fi
+		integer v_a=$v_Restart
+		integer v_b=$v_LinhaProcesso
+		if [ ${v_a} -ge ${v_b} ]
+		then
+			## Rotina ja foi executada para este escript
+			if [ $v_MostouMensagem = false ]
+			then
+				v_MostouMensagem=true
+				clear
+				echo "                   ##########################################################################"
+				echo "                   #                                                                        #"
+				echo "                   #                    A T E N C A O    R E S T A R T                      #"
+				echo "                   #                                                                        #"
+				echo "                   ##########################################################################"
+			fi	
+		 	echo "                  Já Processou ---> $v_Programa --> Descricao -->$v_Tabela" 
+			continue
+		else
+			## Execute rotina pois a mesma nao foi executada ainda
+			if [ $v_MostouMensagem2 = false ]
+			then
+				sleep 3	
+				v_MostouMensagem2=true
+				clear
+				echo ""
+				print $(tput blink)
+				echo "         ##########################################################################"
+				echo "         #                                                                        #"
+				echo "         #                  A G U A R D E   P R O C E S S A N D O                 #"
+				echo "         #                                                                        #"
+				echo "         ##########################################################################"
+				print $(tput sgr0)
+			fi
+   		        print "Programa $v_Programa -- Descricao --> $v_Tabela -- Inicio Dia/Hora --> $(date +%d/%m/%Y_%H:%M)"
+                        print "******************************************************************************************************" >> $a_Controle.log.$(whoami)
+                        print "Inicio de processamento Programa $v_Programa -- Descricao --> $v_Tabela " >> $a_Controle.log.$(whoami)
+                        print "Inicio da execucao $(date +%d/%m/%Y_%H:%M)" >> $a_Controle.log.$(whoami)
+                        
+			export ARQ10="/home/sql_apoio/Processa.${$}"
+		 	. $v_Script >> $a_Controle.log.$(whoami) 2>> $a_Controle.log.$(whoami)
+			if [ -f $ARQ10 ]
+			then
+				more $ARQ10 >> $a_Controle.log.$(whoami)
+				rm -f $ARQ10
+			fi
+			 if [ $RC -eq 0 ] 
+			 then
+			 	fn_SetFimTrans $USUARIO_SENHA $v_Processo $v_LinhaProcesso >> $a_Controle.log.$(whoami)
+				if [ $? -ne 0 ]
+				then
+					echo "Erro ao setar fim de transacao"
+					return 1
+				fi
+			 print "Programa $v_Programa Resultado da carga --> $(tput blink) OK  $(tput sgr0) Hora $(date +%d/%m/%Y_%H:%M)"
+                         print "Execucao concluida OK $v_Programa -- Descricao --> $v_Tabela " >> $a_Controle.log.$(whoami)
+                         print "Execucao finalizada $(date +%d/%m/%Y_%H:%M)" >> $a_Controle.log.$(whoami)
+			 else
+			 print "Programa $v_Programa Resultado da carga --> $(tput blink) ERRO $(tput sgr0) Hora $(date +%d/%m/%Y_%H:%M)"
+		  	    echo "Erro no script de execucao etapa= ${v_Processo} - Programa ${v_Programa} - Descricao ${v_Tabela}"
+                                print "Erro ao executar Programa $v_Programa -- Descricao --> $v_Tabela " >> $a_Controle.log.$(whoami)
+                                print "Execucao finalizada $(date +%d/%m/%Y_%H:%M)" >> $a_Controle.log.$(whoami)
+			 	return 1
+			 fi
+		fi
+	done < $a_Controle
+	if [ $? -eq 0 ] 
+	then
+		fn_SetStop $USUARIO_SENHA ${v_Processo} >>  $a_Controle.log.$(whoami)
+		return 0
+	fi
+fi
+return $?
+}
+###########################################################################################
+## Function   : fn_Mail
+## Autor      : Alam(InforBras)
+## Finalidade : Envia um correio para o Notes
+## Parametros : $1 Titulo da Mensagem
+##            : $2 Mensagem
+## Retorno    : Retorna o resultado da execucao
+## Historico  : Data       | Descricao
+##              -----------|-----------------------------------------------------------------
+##              07/04/2000 | Codigo Horiginal
+###########################################################################################
+function fn_Mail
+{
+if [ ! -a $SHORT_NAME_1 ]
+then
+	mail -s "$1" $SHORT_NAME_1@notes.escelsa.com.br < $2
+fi
+if [ ! -a $SHORT_NAME_2 ]
+then
+        mail -s "$1" $SHORT_NAME_2@notes.escelsa.com.br < $2
+fi
+if [ ! -a $SHORT_NAME_3 ]
+then
+        mail -s "$1" $SHORT_NAME_3@notes.escelsa.com.br < $2
+fi
+if [ ! -a $SHORT_NAME_4 ]
+then
+        mail -s i"$1" $SHORT_NAME_4@notes.escelsa.com.br < $2
+fi
+if [ ! -a $SHORT_NAME_5 ]
+then
+        mail -s i"$1" $SHORT_NAME_5@notes.escelsa.com.br < $2
+fi
+}
+

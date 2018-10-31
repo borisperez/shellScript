@@ -1,0 +1,33 @@
+v_pg=/home/sql_apoio/pg.${$}
+while [ 1 = 1 ]
+do
+clear
+print "+-------------------------------------------------------------------------------------------------------------+"
+print "+----                                Controle de Execucao de Rotina                                       ----+"
+print "+-------------------------------------------------------------------------------------------------------------+"
+if [ -f /dwh/producao/LOGEXEC/* ]
+then
+	print "Rotinas em execucao:"
+	more -e /dwh/producao/LOGEXEC/* > ${v_pg}
+        pg -e ${v_pg}
+else
+	print "Nao Existe rotinas em execucao"
+fi
+print "+-------------------------------------------------------------------------------------------------------------+"
+if [ -f /dwh/producao/LOGFIM/* ]
+then
+	print "Rotinas Finalizadas:"
+	more -e /dwh/producao/LOGFIM/* > ${v_pg}
+        pg -e ${v_pg}
+fi
+print "+-------------------------------------------------------------------------------------------------------------+"
+if [ -f /dwh/producao/LOGERRO/* ] 
+then
+	print "Rotinas com Erro:"
+        more -e /dwh/producao/LOGERRO/* > ${v_pg}
+        pg -e ${v_pg}
+        print "\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a\a"
+fi
+rm -f ${v_pg}
+sleep 5
+done 

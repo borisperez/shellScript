@@ -1,0 +1,6 @@
+clear ; banner "  SISTEMA";banner "  PROTECAO"; banner "  SENHAS"
+echo "Informe o usuario"
+read usuario
+echo "Informe a senha do Usuario"
+read senha
+echo $senha

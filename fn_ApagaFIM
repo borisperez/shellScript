@@ -1,0 +1,41 @@
+#!/bin/ksh
+#
+#
+# Arquivos de Apoio
+a_apoio1=/home/sql_apoio/ls1.${$}
+a_apoio2=/home/sql_apoio/ls2.${$}
+a_apoio3=/home/sql_apoio/ls3.${$}
+# Variaveis do scripts
+integer v_QtdeArqs=`ls /dwh/producao/LOGFIM/* 2>/dev/null | wc -l`
+integer v_LinhaProcesso=0
+integer v_Ret=1
+integer v_Opcao=0
+while [ $v_Ret = 1 ]
+do
+a_Diretorio=$1
+integer v_Line=0
+ls ${a_Diretorio}/* > ${a_apoio1}
+fn_TelaPrin
+while read line
+do
+	v_Line=${v_Line}+1
+	print "                    \n\t\t                    ${bol} $v_Line ${nul} - `more ${line}`"
+done < ${a_apoio1}
+	print "                    \n\t\t                    ${bol} . ${nul} - FIM"
+	print "\n\t          Escolha o Processo e tecle" $(tput bold) "ENTER:" $(tput sgr0) "\c"
+# Fim de montar tela
+        read v_Opcao
+        if [ $? -ne 0 ] || (( $v_Opcao < 0 )) || (( $v_Opcao > $(wc -l ${a_apoio1} | tr -s ' ' ':' | cut -f2 -d':' ) ))
+        then
+           fn_Mensagem "Entre com um número válido, tentativa [$v_Erro de 3]"
+           continue
+        fi
+        if (( $v_Opcao == 0 ))
+        then
+             break
+        else
+		v_RM=`head -$v_Opcao ${a_apoio1}|tail -1`
+		rm -f $v_RM
+        fi
+done
+rm -f ${a_apoio1}

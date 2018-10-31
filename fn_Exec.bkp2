@@ -1,0 +1,145 @@
+#!/usr/bin/ksh
+. /home/sql_apoio/fn_functions
+###########################################################################################
+## Scripts    : sc_Exec
+## Autor      : Alam(InforBras)
+## Finalidade : Processa um conjunto de scripts definidos em um arquivo
+## Parametros : $1 -> Arquivo que contem os scripts a serem processados
+## Retorno    : 
+## Historico  : Data     | Descricao
+##              ---------|-----------------------------------------------------------------
+##              29/02/00 | Codigo Horiginal
+###########################################################################################
+a_Controle=$1
+integer v_LinhaProcesso=0
+v_MostouMensagem=false
+v_MostouMensagem2=false
+v_LogErro=/dwh/producao/LOGERRO/${a_Controle}.${REF_EXECUCAO}
+v_LogFim=/dwh/producao/LOGFIM/${a_Controle}.${REF_EXECUCAO}
+v_LogEXEC=/dwh/producao/LOGEXEC/${a_Controle}.${REF_EXECUCAO}
+if [ -f $v_LogErro ]
+then
+   rm -f $v_LogErro
+fi
+if [ -f $a_Controle ]
+then
+	while read -r v_Line
+	do
+		v_LinhaProcesso=v_LinhaProcesso+1
+		integer v_ColunaParametro=0
+		for e in $(echo $v_Line | sed s/" "/"¨"/g | sed s/";"/" "/g | sed s/"\."/"~"/g )
+		do
+			v_ColunaParametro=v_ColunaParametro+1
+			case $v_ColunaParametro in
+				1) v_Script=`echo ${e%%.*} | sed s/"~"/"\."/g`;;
+				2) v_Programa=${e%%.*};;
+				3) v_Tabela=`echo ${e%%.*} | sed s/"¨"/" "/g`;;
+                                4) v_Resp=`echo ${e%%.*}`;;
+			esac
+		done
+                v_NomeResp=$(grep -i  $v_Resp /home/sql_apoio/Resp.lista)
+		if [ ! -f $v_Script ]
+		then
+			echo "Erro Script nao encontrado $v_Script" 
+                        print "Processo...: ${PROCESSO}" > $v_LogErro
+                        print "Referencia.: ${REF_EXECUCAO}" >> $v_LogErro
+                        print "Scripts....: ${v_Script}" >> $v_LogErro
+                        print "Programa...: ${v_Programa}" >> $v_LogErro
+                        print "Descricao..: ${v_Tabela}" >> $v_LogErro
+                        print "Erro.......: Script Nao encontrado " >> $v_LogErro
+                        fn_Mail "Erro de CARGA DWH no processo ${PROCESSO}" $v_LogErro 
+			return 1
+		fi
+		integer v_a=$v_Restart
+		integer v_b=$v_LinhaProcesso
+		if [ ${v_a} -ge ${v_b} ]
+		then
+			## Rotina ja foi executada para este escript
+			if [ $v_MostouMensagem = false ]
+			then
+				v_MostouMensagem=true
+			fi	
+		else
+			## Execute rotina pois a mesma nao foi executada ainda
+			if [ $v_MostouMensagem2 = false ]
+			then
+				sleep 3	
+				v_MostouMensagem2=true
+			fi
+			print "******************************************************************************************************"
+   		        print "Programa $v_Programa -- Descricao --> $v_Tabela -- Inicio Dia/Hora --> $(date +%d/%m/%Y_%H:%M)" 
+                        print "Inicio de processamento Programa $v_Programa -- Descricao --> $v_Tabela " 
+                        print "Inicio da execucao $(date +%d/%m/%Y_%H:%M)" 
+                        
+			export ARQ10="/home/sql_apoio/Processa.${$}"
+			if [ ! -a $NRO_SS_PRODUCAO ]
+			then
+				print "N.SS: $NRO_SS_PRODUCAO Rotina:${PROCESSO} Programa:${v_Programa} Descricao:${v_Tabela} " > $v_LogEXEC
+			else
+				print "Rotina:${PROCESSO} Programa:${v_Programa} Descricao:${v_Tabela} " > $v_LogEXEC
+			fi
+		 	#. $v_Script >> $a_Controle.log.$(whoami) 2>> $a_Controle.log.$(whoami)
+                        rm -f $v_LogEXEC
+			if [ -f $ARQ10 ]
+			then
+				more $ARQ10 >> $a_Controle.log.$(whoami)
+				rm -f $ARQ10
+			fi
+			 if [ $RC -eq 0 ] 
+			 then
+			 	fn_SetFimTrans $USUARIO_SENHA $v_Processo $v_LinhaProcesso >> $a_Controle.log.$(whoami)
+				if [ $? -ne 0 ]
+				then
+					echo "Erro ao setar fim de transacao v_Processo=${v_Processo} v_LinhaProcesso=${v_LinhaProcesso}"                           
+                                        print "Processo...: ${PROCESSO}" > $v_LogErro
+                                        print "Referencia.: ${REF_EXECUCAO}" >> $v_LogErro
+                                        print "Scripts....: ${v_Script}" >> $v_LogErro
+                                        print "Programa...: ${v_Programa}" >> $v_LogErro
+                                        print "Descricao..: ${v_Tabela}" >> $v_LogErro
+                                        print "Erro.......: Erro ao setar fim de transacao " >> $v_LogErro        
+					fn_Mail "Erro de CARGA DWH no processo ${PROCESSO}" $v_LogErro
+					return 1
+				fi
+			 print "Programa $v_Programa Resultado da carga --> $(tput blink) OK  $(tput sgr0) Hora $(date +%d/%m/%Y_%H:%M)"
+                         print "Execucao concluida OK $v_Programa -- Descricao --> $v_Tabela " >> $a_Controle.log.$(whoami)
+                         print "Execucao finalizada $(date +%d/%m/%Y_%H:%M)" >> $a_Controle.log.$(whoami)
+			 else
+                         print "Processo...: ${PROCESSO}" > $v_LogErro
+                         print "Referencia.: ${REF_EXECUCAO}" >> $v_LogErro
+                         print "Scripts....: ${v_Script}" >> $v_LogErro
+                         print "Programa...: ${v_Programa}" >> $v_LogErro
+                         print "Descricao..: ${v_Tabela}" >> $v_LogErro
+			 fn_Mail "Erro de CARGA DWH no processo ${PROCESSO}" $v_LogErro
+			 print "Programa $v_Programa Resultado da carga --> $(tput blink) ERRO $(tput sgr0) Hora $(date +%d/%m/%Y_%H:%M)"
+		  	    echo "Erro no script de execucao etapa= ${v_Processo} - Programa ${v_Programa} - Descricao ${v_Tabela}"
+                                print "Erro ao executar Programa $v_Programa -- Descricao --> $v_Tabela " >> $a_Controle.log.$(whoami)
+                                print "Execucao finalizada $(date +%d/%m/%Y_%H:%M)" >> $a_Controle.log.$(whoami)
+			 	return 1
+			 fi
+		fi
+	done < $a_Controle
+	if [ $? -eq 0 ] 
+	then
+                
+		fn_SetStop $USUARIO_SENHA ${v_Processo} >>  $a_Controle.log.$(whoami)
+                if [ ! -a $NRO_SS_PRODUCAO ]
+		then
+                	print "N.SS: $NRO_SS_PRODUCAO Rotina:${PROCESSO} " > $v_LogFim
+		else
+                	print "Rotina:${PROCESSO} " > $v_LogFim
+		fi
+
+
+		fn_Mail "CARGA DWH Finalizada ${PROCESSO}" $v_LogFim
+		return 0
+	fi
+else
+			echo "Arquivo de controle .lista nao encontrado $v_Script"
+                        print "Processo...: ${PROCESSO}" > $v_LogErro
+                        print "Referencia.: ${REF_EXECUCAO}" >> $v_LogErro
+                        print "Scripts....: ${v_Script}" >> $v_LogErro
+                        print "Programa...: ${v_Programa}" >> $v_LogErro
+                        print "Descricao..: ${v_Tabela}" >> $v_LogErro
+                        print "Erro.......: Arquivo de controle .lista nao encontrado " >> $v_LogErro
+fi
+return $?
