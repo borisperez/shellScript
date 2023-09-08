@@ -1,0 +1,315 @@
+#!/bin/bash
+
+##################################################################################
+#                                                                                #
+#                               DataPump Exp and Imp                        #
+#                                                                                #
+##################################################################################
+#       Boris Perez
+#---------------------------------------------------------------------------------
+#  @(#)  Script: cleanup_log_event.sh                         Vrs: 1.0
+#---------------------------------------------------------------------------------
+#  Description : Script to cleanup logs the TDC Repository table (MIR_LOG_EVENT)
+#
+#---------------------------------------------------------------------------------
+# Parameters:
+#  -e : Execution type [export|import]. "
+#  -u : The Oracle User ID to execute the DataPump, this user must habe permissions [DATAPUMP_EXP_FULL_DATABASE|DATAPUMP_IMP_FULL_DATABASE] roles in the Database ."
+#  -p : The Oracle User password, if you do not use this parameter the script will ask for the password during the execution."
+#  -d : Date [YYYYMM] to cleanup the MIR_LOG_EVENT table from the TDCAPP DataBase schema."
+#  -h : Help."
+#---------------------------------------------------------------------------------
+# Error message:
+# 99 "Error to execute procedure PKG_CLENUP_EVENT_LOG.SP_PRE_EXPORT_MIR_EVENT_LOG. DataDump not executed."
+# 98 "Error to create DataPump for the the table MIR_LOG_EVENT."
+# 95 "Error to retore DataDump File "
+# 94 "Error to restore the data from to TDCAPP.MIR_LOG_EVENT."
+# 89 "Error to delete data from to TDCAPP.MIR_LOG_EVENT."
+#---------------------------------------------------------------------------------
+
+banner(){
+  echo "+------------------------------------------------------------------------------------------------------------------------------------+"
+  printf "| %-130s |\n" "Starting Script `basename $0` `date`"
+  echo "|                                                                                                                                    |"
+  printf "|`tput bold` %-130s `tput sgr0`|\n" "$@"
+  echo "+------------------------------------------------------------------------------------------------------------------------------------+"
+}
+
+end () {
+echo "+------------------------------------------------------------------------------------------------------------------------------------+"
+}
+
+usage() {
+     ScriptName=`basename $0`
+     tput bold
+     echo -e "\n \n"
+     echo "Usage:"
+     echo "${ScriptName} ( [ -e ] [ -u ] [ -p ] [ -d ] [ -h ]) "
+     echo "    -e : Execution type [export|import]. "
+     echo "    -u : User to execute the DataPump, this user must habe permissions [DATAPUMP_EXP_FULL_DATABASE|DATAPUMP_IMP_FULL_DATABASE] roles in the Database ."
+     echo "    -p : User password, if you do not use this parameter the script will ask for the password during the execution."
+     echo "    -d : Date [YYYYMM] to cleanup the MIR_LOG_EVENT table from the TDCAPP DataBase schema."
+         echo "    -h : Help."
+     echo -e "\n"
+         echo "Example 1: ${ScriptName} -e export -u username -d 202001"
+         echo "Example 2: ${ScriptName} -e import -u username -d 202001"
+         echo "Example 3: ${ScriptName} -e export -u username -p userpassword -d 202001"
+         echo -e "\n \n \n"
+     tput sgr0
+         exit 0
+}
+
+
+printMessage() {
+p_data=`date +"%Y.%m.%d.%H.%M.%S"`
+if [ $1 != 0 ] && [ $1 != 1 ]
+then
+                msgerror=$p_data": Error : "${2}
+                printf "|`tput setaf 1` %-130s `tput sgr0`|\n" "$msgerror"
+                echo -n "$msgerror" >> $log_file_name
+                echo -e "\n" >> $log_file_name
+elif [  $1 == 1 ]
+then
+                msgwarn=$p_data": Warn : "${2}
+        printf "|`tput setaf 3` %-130s `tput sgr0`|\n" "$msgwarn"
+                echo -n "$msgwarn" >> $log_file_name
+                echo -e "\n" >> $log_file_name
+elif [  $1 == 0 ]
+then
+                msginfo=$p_data": Info : "${2}
+            printf "|`tput bold` %-130s `tput sgr0`|\n" "$msginfo"
+        echo -n "$msginfo" >> $log_file_name
+        echo -e "\n" >> $log_file_name
+fi
+}
+
+
+getDataPumpDirectory () {
+#set -x
+export dataPumpPath=$(sqlplus -s $user/$pwd@//$server:$port/$service <<EOF
+set heading off;
+set feedback off;
+SELECT DIRECTORY_PATH FROM DBA.DBA_DIRECTORIES WHERE DIRECTORY_NAME ='DATA_PUMP_DIR';
+EOF
+)
+}
+
+
+dataPumpImport() {
+#set -x
+#printMessage 0 "Starting...  Validate Data Pump File"
+#validDumpFile
+printMessage 0 "Restore Started... "
+printMessage 0 "Starting...  Import Data Pump to the auxiliar table"
+impdp $user/$pwd@//$server:$port/$service directory=DATA_PUMP_DIR dumpfile=${dumpfile} logfile=${pumplogfile} table_exists_action=truncate 2> import_datapump.log
+valImp=`grep -c imported import_datapump.log`
+if [ $valImp == 0 ]; then
+        printMessage 95 "Error to retore DataDump File "$dumpfile
+    cat import_datapump.log | \
+        while read line
+        do
+        printMessage 95 "$line"
+        done
+        end
+        exit 95
+elif [  $valImp -gt 0 ]; then
+    imp_line=`grep imported import_datapump.log`
+        rowsimp=`echo $imp_line | awk '{print $7}'`
+        printMessage 0 "$imp_line"
+printMessage 0 "Starting...  Restore data from the auxiliar table to the end table."
+sp_copyback_table=$(sqlplus -s $user/$pwd@//$server:$port/$service << EOF
+execute dbms_output.enable(1000000);
+set serveroutput on
+execute PKG_CLENUP_EVENT_LOG.SP_POS_IMPORT_MIR_EVENT_LOG ('${cdata}');
+exit;
+EOF
+)
+fi
+lines="echo -e $sp_copyback_table |  tr '.' '\n'"
+  while read line
+  do
+    if [[ "$line" == *"PROC-RETURN:0"* ]]; then
+             printMessage 0 "Table TDCAPP.MIR_LOG_EVENT successful Restored from Data Pump $dumpfile"
+                 copy="yes"
+        elif [[ "$line" == *"PROC-MSM:Restored"* ]]; then
+                printMessage 0 "$line"
+        fi
+  done <<< "$lines"
+    if [ "$copy" != "yes" ] ; then
+                printMessage 94 "Error to restore the data from to TDCAPP.MIR_LOG_EVENT."
+                end
+                exit 94
+        fi
+end
+}
+
+dataPumpExport() {
+printMessage 0 "Cleanup Started... "
+printMessage 0 "Starting...  Data Prepare to be exported..."
+sp_dataExpPrepare=$(sqlplus -s ${user}/${pwd}@//${server}:${port}/${service} << EOF
+execute dbms_output.enable(1000000);
+set serveroutput on
+execute PKG_CLENUP_EVENT_LOG.SP_PRE_EXPORT_MIR_EVENT_LOG ('${cdata}');
+exit;
+EOF
+)
+lines="echo -e $sp_dataExpPrepare |  tr '.' '\n'"
+  while read line
+  do
+    if [[ "$line" == *"PROC-RETURN:0"* ]]; then
+                prepareExport="yes"
+                printMessage 0 "Successful on Data Prepare for the table TDCAPP.MIR_LOG_EVENT."
+        elif [[ "$line" == *"PROC-MSM:Backup"* ]]; then
+            printMessage 0 "$line"
+        fi
+ done <<< "$lines"
+    if [ "$prepareExport" != "yes" ] ; then
+                printMessage 99 "Error to execute procedure PKG_CLENUP_EVENT_LOG.SP_PRE_EXPORT_MIR_EVENT_LOG. DataDump not executed."
+                end
+                exit 99
+        else
+                printMessage 0 "Starting...  Data Pump."
+                expdp $user/$pwd@//$server:$port/$service directory=DATA_PUMP_DIR dumpfile=$dumpfile logfile=$pumplogfile tables=TDCMDI.TDC_MIR_LOG_EVENT_TMP compression=all indexes=n cluster=n exclude=statistics 2> export_datapump.log
+                valExp=`grep -c exported export_datapump.log`
+                if [ $valExp == 0 ]; then
+                        printMessage 98 "Error to create DataPump for the the table MIR_LOG_EVENT."
+                        cat export_datapump.log | \
+                        while read line
+                        do
+                                printMessage 98 "$line"
+                        done
+                        end
+                        exit 98
+                elif [  $valExp -gt 0 ]; then
+                    exp_line=`grep exported export_datapump.log`
+                        rowsexp=`echo $exp_line | awk '{print $7}'`
+                        printMessage 0 "Successful Data Pump Backup for the table TDCAPP.MIR_LOG_EVENT."
+                        printMessage 0 "$exp_line"
+                fi
+        fi
+end
+}
+
+
+deleteSourceTable () {
+printMessage 0 "Starting...  Delete rows from the source table..."
+sp_deleteSTable=$(sqlplus -s $user/$pwd@//$server:$port/$service <<EOF
+execute dbms_output.enable(1000000);
+set serveroutput on
+execute  PKG_CLENUP_EVENT_LOG.SP_POS_EXPORT_MIR_EVENT_LOG ('${cdata}');
+exit;
+EOF
+)
+lines="echo -e $sp_deleteSTable |  tr '.' '\n'"
+  while read line
+  do
+    if [[ "$line" == *"PROC-RETURN:0"* ]]; then
+                deleted="yes"
+                printMessage 0 "Successful deleted table TDCAPP.MIR_LOG_EVENT Data Pump."
+        elif [[ "$line" == *"PROC-MSM:Deleted"* ]]; then
+                printMessage 0 "$line"
+        fi
+ done <<< "$lines"
+    if [ "$deleted" != "yes" ]; then
+                printMessage 89 "Error to delete data from to TDCAPP.MIR_LOG_EVENT."
+                end
+                exit 89
+        fi
+end
+}
+
+validDumpFile() {
+if [ ! -f $dataPumpPath"/"$dumpfile ] ; then
+     printMessage 101 "Dump File do not exist!"${1}
+fi
+}
+
+execute () {
+if [ $cmd == "export" ] ; then
+        dataPumpExport
+#       deleteSourceTable
+elif [ $cmd == "import" ] ; then
+        dataPumpImport
+fi
+
+}
+
+
+main() {
+#set -x
+clear
+if [ $# -eq 0 ];then
+     usage
+     exit 1
+else
+while getopts "e:u:p:d:h:" opt
+do
+        case "$opt" in
+                e )
+                        export cmd="$OPTARG"
+                        ;;
+                u )
+                        export user="$OPTARG"
+                        ;;
+                p )
+                        export pwd="$OPTARG"
+                        ;;
+                d )
+                        export cdata="$OPTARG"
+                        ;;
+                h )
+                        usage
+                        ;;
+                ? )
+                        usage
+                        ;;
+                esac
+done
+fi
+re='^[0-9]+$'
+if [ $cmd != "export" ] && [ $cmd != "import" ]; then
+  printMessage 99 "Wrong execution type "$cmd
+  usage
+fi
+if [ -z $pwd ]; then
+        read -sp " Enter with the $user user password: " pwd
+        clear
+fi
+if [ -z "$cmd" ] || [ -z "$user" ] || [ -z "$cdata" ] || [ -z "$pwd" ]; then
+   printMessage 99 "Some parameters are empty";
+   usage
+fi
+if ! [[ $cdata =~ $re ]] ; then
+   printMessage 99 "Parameters -d Date [YYYYMM] is wrong format "$cdata
+   usage
+fi
+#getDataPumpDirectory
+export dumpfile=$cmd"_MIR_LOG_EVENT_"$cdata".dmp"
+export pumplogfile=$cmd"_MIR_LOG_EVENT_"$cdata".log"
+
+banner "TDCAPP Cleanup/Restore Audit Log Job"
+execute
+}
+
+
+#-------------------------------------------------------------------------------------------------------------------#
+#Log Dir need to be configurated
+export v_data=`date +"%Y.%m.%d.%H.%M.%S"`
+export local_dir=./
+export log_dir=$local_dir
+export log_name=`echo $0 | awk -F "." '{print $1}'`
+export script_log_name=$log_name"_"$v_data".log"
+export log_file_name=$log_dir$script_log_name
+
+# Oracle Parameters need to be configurated
+export ORACLE_HOME=/u001/app/oracle/product/DEV_EE_12.2.0.1
+export SQLPATH=/home/oracle/sql
+export ORACLE_BASE=/u001/app/oracle
+export PATH=$PATH:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/sbin:/home/oracle/.local/bin:/home/oracle/bin:/u001/app/oracle/product/DEV_EE_12.2.0.1/bin
+export NLS_LANG=AMERICAN_AMERICA.AL32UTF8
+export server=10.106.184.188
+export port=1515
+export service=DEV6PF0PDB.TDBANK.CA
+
+
+main ${*}
