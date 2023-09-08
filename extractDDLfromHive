@@ -1,0 +1,39 @@
+#!/bin/sh
+
+# Please add all dependent JAR files to the CLASSPATH.
+# For example, when you use custom SerDe add their JAR files, as they are required by Hive's "show tables" command.
+# Exqample: hive> ADD JAR /home/somefolder/dependent.jar;
+
+start=$(date +"%s")
+
+echo "Generating HQL DDL Started"
+echo "-- started - $(date +%F_%T)"
+
+SCHEMAS=$*
+if [ -z "${SCHEMAS}" ]
+then
+  echo "Retrieving all schemas ..."
+  SCHEMAS=`hive -e "show databases;" 2>/dev/null | grep -v "WARN:"`
+fi
+
+for  SCHEMA in ${SCHEMAS}
+do
+    HIVE_CMD=$(mktemp hive-XXXXXXXX.cmd)
+    mkdir -p ./test/${SCHEMA}
+    echo "-- Started - $(date +%F_%T) ($diff sec)" > ./test/${SCHEMA}/${SCHEMA}.hql
+    echo "Processing generating  DDL to schema... '${SCHEMA}'"
+    TABLES=`hive -e "show tables in ${SCHEMA}" 2>/dev/null | grep -v "WARN:"`
+    for TABLE in ${TABLES}
+    do
+        echo "show create table ${SCHEMA}.${TABLE};" >> "${HIVE_CMD}"
+        echo "Generating HQL DDL to table... ${TABLE}"
+    done
+    hive -f "${HIVE_CMD}" 2>/dev/null | grep -v "WARN:" | sed 's/^CREATE /;\nCREATE /' >> ./test/${SCHEMA}/${SCHEMA}.hql
+    stop=$(date +"%s")
+    diff=$(( $stop - $start ))
+    echo "-- finished - $(date +%F_%T) ($diff sec)" >> ./test/${SCHEMA}/${SCHEMA}.hql
+    echo "Finished Generating HQL ... to ${SCHEMA}"
+    rm "${HIVE_CMD}"
+done
+
+echo "Generating HQL DDL Ended"
