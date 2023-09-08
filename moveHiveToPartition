@@ -1,0 +1,134 @@
+
+#!/bin/bash
+
+##################################################################################
+#                                                                                #
+#                       EDNC HIVE DDL REPLACE LOCATION                           #
+#                                                                                #
+##################################################################################
+#       Boris
+#---------------------------------------------------------------------------------
+#  @(#)  Script: endc_hivedll_replace_location.sh                         Vrs: 1.0
+#---------------------------------------------------------------------------------
+#  Description : Script to replace the hive table location to the
+#                partition location
+#---------------------------------------------------------------------------------
+export v_data=$(date +"%Y.%m.%d.%H.%M.%S")
+export ddl_dir="/opt/talend-mm-agent/edc_talend/data/sit_hive_ddl/LIQ"
+export endc_home="/opt/talend-mm-agent/edc_talend"
+export endc_hpf_log_dir=$endc_home"/data/ENDC_EXT_HPF"
+export endc_log_dir=$endc_home/logs
+export endc_log_name=$endc_log_dir"/ENDC_EXT_HPF_LOG_COPY_"$v_data".log"
+
+logger() {
+v_data_f=$(date +"%Y.%m.%d.%H.%M.%S")
+if [[ $1 -ge 80 && $1 -le 100 ]]
+then
+        tput setaf 1
+        echo -n $(basename $0) $v_data_f": Error : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n $(basename $0) $v_data_f": Error : "$2 >> $endc_log_name
+                echo -e "\n" >> $endc_log_name
+elif [[  $1 == 1 ]]
+then
+        tput setaf 3
+        echo -n $(basename $0) $v_data_f": Warn : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n $(basename $0) $v_data_f": Warn : "$2 >> $endc_log_name
+                echo -e "\n" >> $endc_log_name
+elif [[  $1 == 0 ]]
+then
+        tput bold
+        echo -n $(basename $0) $v_data_f": Info : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n $(basename $0) $v_data_f": Info : "$2 >> $endc_log_name
+                echo -e "\n" >> $endc_log_name
+fi
+}
+
+backup() {
+    hqlbkp=${1}".bkp"
+    errmsg=$( cp ${1} ${hqlbkp} 2>&1 )
+    if [[ -z "$errmsg" ]];then
+        logger 0 "File was copied successfully  "${1}
+        C_status=0
+    else
+        logger 99 "Error to copy the file "${1}" Error message: "$errmsg
+        C_status=93
+    fi
+    return "$C_status"
+}
+
+
+ehfile() {
+E_status=0
+    if [[ -e ${1} ]]
+    then
+        E_status=0
+    else
+        E_status=92
+        logger 92 "Error checking file "${1}
+    fi
+    return "$E_status"
+}
+
+ehLocation() {
+    L_status=0
+    hdfs=$(echo $1 | grep -c "hdfs")
+    if [ $hdfs == 1 ];then
+        L_status=0
+    else
+        L_status=94
+    fi
+    return "$L_status"
+}
+
+main() {
+set -x
+    param=podium_delivery_date
+    find $ddl_dir -name "*.txt" | while read file ; do
+        size=$(cat ${file} | wc -l 2>/dev/null)
+        len=$(cat ${file} | wc -c 2>/dev/null)
+        echo "Size "$size
+        echo "Len "$len
+        if [[ $size == 1 && $len > 1 ]];then
+            local_orig=$(cat ${file} | cut -d" " -f2)
+            local=$(echo $local_orig | sed "s/[[:digit:]]\{14\}\+/$param/g")
+            echo "Local "$local
+            location="  '"$local"'"
+            ehLocation $local
+            if [[ $L_status == 0 ]];then
+                table=$(echo `basename ${file}` | cut -d"." -f1)
+                malcode=$(dirname $file| rev | cut -d"/" -f1 | rev)
+                dir=$(dirname $file)
+                echo "Malcode: "$malcode
+                hql=$dir"/"$malcode.hql
+                ehfile $hql
+                if [[ $E_status == 0 ]];then
+                    linenum=$(grep -nw ${table} ${hql} | grep nameservice1 | cut -d":" -f1)
+                    echo "Substitue in File "$hql
+                    echo "Line "$linenum
+                    echo "by "$location
+                    if [[ -n $linenum ]];then
+                        sed -i "$linenum s|.*|$location|" $hql
+                        if [ $? == 0 ];then
+                            logger 0 "File was updated "$hql
+                        else
+                            logger 99 "Error to updated file "$hql
+                        fi
+                    else
+                        logger 99 "Line numbe is empty table "${table}
+                    fi
+                else
+                    echo "HQL "$hql" File doe's not exist"
+                fi
+            else
+                echo "Location "$location" is not a HDFS file"
+            fi
+        else
+            echo "File "$file" is empty!"
+        fi
+    done
+}
+
+main
