@@ -1,0 +1,212 @@
+##################################################################################
+#                                                                                #
+#                               LOG CLEAUNP                                      #
+#                                                                                #
+##################################################################################
+#       Boris V. Perez
+#---------------------------------------------------------------------------------
+#  @(#)  Script: logCleanup.sh                                     Vrs: 1.0
+#---------------------------------------------------------------------------------
+#  Description : Script to cleanup the old logs from all application configureted
+#              in the Cleanup config file
+#---------------------------------------------------------------------------------
+
+
+usage() {
+     ScriptName=`basename $0`
+     tput bold
+     echo -e "\n \n"
+     echo "Usage:"
+     echo "${ScriptName} ( [ -run ] [ -conf ] [ -show ] [ -help ]) "
+     echo "    -run : Execute the cleanup script cleaning the logs files configureted in the configuration file. "
+         echo "    -conf : Add new Log System Configuration to be monitored by the cleanup process."
+         echo "    -show : Shows the Log System Cleanup Configuration ."
+     echo -e "\n \n"
+     tput sgr0
+}
+
+printMessage() {
+if [ $1 == 99 ]
+then
+        tput setaf 1
+        echo -n `basename $0` $v_data": Error : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n `basename $0` $v_data": Error : "$2 >> $log_file_name
+                echo -e "\n" >> $log_file_name
+elif [  $1 == 1 ]
+then
+        tput setaf 3
+        echo -n `basename $0` $v_data": Warn : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n `basename $0` $v_data": Warn : "$2 >> $log_file_name
+                echo -e "\n" >> $log_file_name
+elif [  $1 == 0 ]
+then
+        tput bold
+        echo -n `basename $0` $v_data": Info : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n `basename $0` $v_data": Info : "$2 >> $log_file_name
+                echo -e "\n" >> $log_file_name
+fi
+}
+
+show() {
+cat $config_file | awk -F"|" '
+BEGIN{
+    i=0;
+         }
+
+        {
+
+                a_path[i]=$1;
+                a_name[i]=$2;
+                a_day[i]=$3;
+                i+=1;
+        }
+    END {
+           printf "\n\n\n"
+       printf "+----------------------------------------------------------------------------------------------------------------------------------------------------------+\n"
+       printf "|                                                              CLEANUP CONFIGURATIONS                                                                      |\n"
+       printf "+----------------------------------------------------------------------------------------------------------+------------------------------------------+----+\n"
+       printf "| Log Path                                                                                                 | log Name(pattern)                        |Days|\n"
+       printf "+----------------------------------------------------------------------------------------------------------+------------------------------------------+----+\n"
+           for (i in a_path) {
+                        printf ("|%-106s|%-42s|%-4s| \n",a_path[i],a_name[i],a_day[i]); }
+           printf "+----------------------------------------------------------------------------------------------------------------------------------------------------------+\n"
+           }'
+}
+
+validConfigFile() {
+if [ ! -f ${1} ] ; then
+        printMessage 1 "File do not exist! Creating the file... "${1}
+        printMessage 1 ${1} " File empty adding the first configuration... "
+        echo $log_dir"|ENDC_LOG_CLEANUP_*.log|5" > ${1}
+        if [ $? != 0 ] ;then
+                printMessage 99 "Error to create the file "${1}
+                exit 96
+        fi
+fi
+}
+
+validDir() {
+if [ ! -d ${1} ] ; then
+    mkdir ${1}
+        printMessage 1 "Directory do not exist! Creating the the folder... "${1}
+        if [ $? != 0 ] ;then
+                printMessage 99 "Error to create the directory... "${1}
+                exit 97
+        fi
+fi
+}
+
+conf() {
+op="Y"
+while [[ $op == @(Y|y) ]] ; do
+clear
+echo -e "Define CleanUp Configuration \n"
+echo "Enter the Log Path that will be monitored."
+read v_Path
+echo "Enter the name of the Log Name or Pattern ex: (parttern.log, parttern*parttern) Please do not use (*parttern*) the process is already doing it."
+read v_Logname
+echo "Enter the number of day to keep the log in the server. Ex: 10, will keep the log that was modified more than 10 day."
+read v_Days
+if [[ -z "$v_Path" || -z "$v_Logname" || -z "$v_Days" ]]; then
+  printMessage 99 "Input can not be null!"
+  exit 98
+else
+  echo   $v_Path"|"$v_Logname"|"$v_Days >> $config_file
+  if [ $? != 0 ] ; then
+        printMessage 99 "Input config error!"
+  else
+    printMessage 0 "Input configuration successfully, Continue? (Y|N) "
+        read op
+  fi
+fi
+done
+}
+
+validMapFile() {
+ awk -F"|" '{
+if ( NF == 3 ) {
+exit 0
+} else {
+exit 99
+}
+}' $1
+}
+
+checkConfig(){
+validDir $log_dir
+validDir $config_dir
+validConfigFile $config_file
+validMapFile $config_file
+}
+
+run() {
+
+if [ $? == 0 ] ; then
+        while read line
+        do
+                v_Path=`echo $line | cut -d "|" -f 1`
+                v_File=`echo $line | cut -d "|" -f 2`
+                v_Days=`echo $line | cut -d "|" -f 3`
+
+                for file_name in `find ${v_Path} -name "*${v_File}*" -mtime +$v_Days -type f`; do
+                        printMessage 0 "Removing File... "${file_name}
+                                                error=$(rm ${file_name} 2>&1 1>/dev/null)
+                        if [ $? -eq 0 ] ; then
+                                printMessage 0 "Log Name : "${file_name}" was deleted successful."
+                        else
+                                printMessage 99 "Failed to delete log file : "${file_name}" ${error}"
+
+                        fi
+                done
+        done < $config_file
+else
+        printMessage 99 "Log File Configuration with issues, please confirm if the file is delimited by a \"|\" or if the file has three columns."
+fi
+}
+
+main() {
+## set -x
+checkConfig
+if [ $# -eq 0 ];then
+     usage
+     exit 1
+fi
+case `echo ${1}`
+ in
+   -run)
+      run
+      shift
+      ;;
+   -conf)
+      conf
+          show
+      shift
+      ;;
+   -show)
+      show
+      shift
+      ;;
+   -help)
+          usage
+      shift
+      ;;
+   *)
+      usage
+      shift
+      ;;
+esac
+
+
+}
+
+export v_data=`date +"%Y.%m.%d.%H.%M.%S"`
+export local_dir=/apps/talend/scripts
+export config_dir=$local_dir/conf
+export config_file=$config_dir"/ENDC_CLEANUP.conf"
+export log_dir=$local_dir/logs
+export log_file_name=$log_dir"/ENDC_LOG_CLEANUP_"$v_data".log"
+
+main ${1}
