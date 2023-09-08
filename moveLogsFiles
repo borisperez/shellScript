@@ -1,0 +1,143 @@
+#!/bin/bash
+
+##################################################################################
+#                                                                                #
+#                               COPY LOG FILE                           #
+#                                                                                #
+##################################################################################
+#       Boris V. Perez
+#---------------------------------------------------------------------------------
+#  @(#)  Script: copy_log.sh                                     Vrs: 1.0
+#---------------------------------------------------------------------------------
+#  Description : Script to copy log from a location to another
+#---------------------------------------------------------------------------------
+export v_data=$(date +"%Y.%m.%d.%H.%M.%S")
+export hpf_log_dir="/apps/talend/tdc_download/log"
+export endc_home="/apps/talend"
+export endc_hpf_log_dir=$endc_home"/data/ENDC_HPF_LOG_EXTRACT"
+export endc_log_dir=$endc_home/logs
+export endc_log_name=$endc_log_dir"/ENDC_HPF_LOG_EXTRACT_"$v_data".log"
+
+logger() {
+v_data_f=$(date +"%Y.%m.%d.%H.%M.%S")
+if [[ $1 == 99 ]]
+then
+        tput setaf 1
+        echo -n $(basename $0) $v_data_f": Error : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n $(basename $0) $v_data_f": Error : "$2 >> $endc_log_name
+                echo -e "\n" >> $endc_log_name
+elif [[  $1 == 1 ]]
+then
+        tput setaf 3
+        echo -n $(basename $0) $v_data_f": Warn : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n $(basename $0) $v_data_f": Warn : "$2 >> $endc_log_name
+                echo -e "\n" >> $endc_log_name
+elif [[  $1 == 0 ]]
+then
+        tput bold
+        echo -n $(basename $0) $v_data_f": Info : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n $(basename $0) $v_data_f": Info : "$2 >> $endc_log_name
+                echo -e "\n" >> $endc_log_name
+fi
+}
+
+copy() {
+    errmsg=$( cp ${1} ${2} 2>&1 )
+    if [[ -z "$errmsg" ]];then
+        logger 0 "File was copied successfully  "${1}
+        C_status=0
+    else
+        logger 99 "Error to copy the file "${1}" Error message: "$errmsg
+        C_status=93
+    fi
+    return "$C_status"
+}
+
+existDir() {
+D_status=0
+    if [[ ! -d ${1} ]]
+    then
+        errmsg=$( mkdir -p ${1} 2>&1 )
+        if [[ -z "$errmsg" ]];then
+            logger 1 "Directory do not exist! Creating the the directory... "${1}
+            D_status=0
+        else
+            logger 99 "Error to create the directory... "$errmsg
+            D_status=1
+        fi
+    fi
+    return "$D_status"
+}
+
+ehfile(){
+E_status=0
+    if [[ -e ${1} ]]
+    then
+        E_status=0
+    else
+        E_status=92
+    fi
+    return "$E_status"
+}
+
+existFile() {
+F_status=0
+    if [[ -e ${1} ]]
+    then
+        logger 0 "File "${1}" alredy exist..."
+        F_status=1
+    else
+        F_status=0
+    fi
+    return "$F_status"
+}
+
+copyLogs() {
+    error=0
+    count=0
+    errcount=0
+    for log in $( find $hpf_log_dir  -name "*.log.taskDone" -type f 2>&1 )
+    do
+        ehfile "$log"
+        if [[ $E_status == 0 ]];then
+            log_dir=$(dirname $log)
+            log_dir_end=$(echo $log_dir | awk 's=index($0,"/log/"){print substr($0,s)}')
+            log_dir_base=$(basename $log)
+            local_log_dir=${endc_hpf_log_dir}${log_dir_end}
+            existDir $local_log_dir
+            if [[ $D_status == 0 ]];then
+                existFile $local_log_dir"/"$log_dir_base
+                if [[ $F_status == 0 ]];then
+                    copy $log $local_log_dir"/"$log_dir_base
+                    if [[ $C_status == 0 ]];then
+                        logger 0 "Log "$local_log_dir"/"$log_dir_base" was sucessed copied"
+                        count=$((count+1))
+                    else
+                        error=1
+                        logger 99 "Log "$local_log_dir"/"$log_dir_base" error to copy"
+                        errcount=$((errcount+1))
+                    fi
+                fi
+            fi
+        else
+           logger 99 $log
+        fi
+    done
+    if [[ $error == 0 ]]; then
+        logger 0 "HPF Log copy was complete with succeed, "$count" was copied."
+    else
+        logger 99 "HPF Log copy did not copy "$errcount" files, please see the log : "$endc_log_name
+    fi
+}
+
+
+main() {
+## set -x
+
+copyLogs
+}
+
+main
