@@ -1,0 +1,95 @@
+#!/bin/bash
+
+##################################################################################
+#                                                                                #
+#                               LOG Size Control                                         #
+#                                                                                #
+##################################################################################
+#       Boris V. Perez
+#---------------------------------------------------------------------------------
+#  @(#)  Script: log_size_control.sh                                    Vrs: 1.0
+#---------------------------------------------------------------------------------
+#  Description : Script to control the catalina.out log size and
+#              to avoid it get bigger than the max size defined
+#---------------------------------------------------------------------------------
+
+rename() {
+        mv $file_dir/$file_name $file_dir/$file_new_name
+        if [ $? != 0 ] ;then
+                printMessage 96 "Error to rename the file "$file_name
+                exit 96
+        fi
+}
+
+zip_file() {
+        gzip -9 $file_dir/$file_new_name
+        if [ $? != 0 ] ;then
+                printMessage 97 "Error to compress file "$file_dir"/"$file_name
+                exit 97
+        else
+                printMessage 0 "File "$file_dir"/"$file_new_name" was compressed successuful"
+        fi
+}
+
+check_size(){
+        export file_size=$(stat -c%s "$file_dir/$file_name")
+        if (( $file_size > $file_max_size_bytes ))
+        then
+                printMessage 0 "Catalina file size "$file_size" great than max suppoted "$file_max_size_bytes
+                return 1
+        else
+                return 0
+        fi
+        if [ $? != 0 ] ;then
+                printMessage 95 "Error to check the file "$file_dir"/"$file_name" size"
+                exit 95
+        fi
+}
+
+main(){
+        check_size
+        SIZE_CHECK=$?
+        if [ "$SIZE_CHECK" -eq "1" ]; then
+                printMessage 0 "Renaming file "$file_dir"/"$file_name" to "$file_dir"/"$file_new_name
+                rename
+                printMessage 0 "Compressing file "$file_dir"/"$file_new_name
+                zip_file
+        else
+                printMessage 0 "File "$file_dir"/"$file_name" size "$file_size" less than max size allowed"
+        fi
+}
+
+printMessage() {
+if [  $1 == 1 ]
+then
+        tput setaf 3
+        echo -n `basename $0` $v_data": Warn : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n `basename $0` $v_data": Warn : "$2 >> $log_file_name
+                echo -e "\n" >> $log_file_name
+elif [  $1 == 0 ]
+then
+        tput bold
+        echo -n `basename $0` $v_data": Info : "$2 ; echo -e "\n"
+        tput sgr0
+                echo -n `basename $0` $v_data": Info : "$2 >> $log_file_name
+                echo -e "\n" >> $log_file_name
+else
+                tput setaf 1
+        echo -n `basename $0` $v_data": Error : "$2 ; echo -e "\n"
+        tput sgr0cp
+                echo -n `basename $0` $v_data": Error : "$2 >> $log_file_name
+                echo -e "\n" >> $log_file_name
+fi
+}
+
+
+export v_data=`date +"%Y.%m.%d.%H.%M.%S"`
+export file_dir=/apps/TDC/TalendDataCatalog/data/logs/tomcat
+export file_name=catalina.out
+export file_new_name=$file_name"_"$v_data".zip"
+export log_dir=/apps/talend/logs
+export log_file_name=$log_dir/ENDC_CONTROL_CATALINA_LOG_$v_data.log
+export file_max_size_bytes=500
+
+main
