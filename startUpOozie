@@ -1,0 +1,170 @@
+#!/bin/bash
+
+set -e
+
+cd `dirname "$0"`
+
+print_usage ()
+{
+          echo "Usage: $0  bundle [START_DATE] [END_DATE]"
+          echo "Usage: $0  coord MAL [START_DATE] [END_DATE]"
+          echo "Usage: $0  wf MAL [AS_OF_DATE]"
+          echo "Run bundle: $0 bundle 20160101 20161231 -DST=FALL"
+          echo "Run coordinator: $0 coord spr 20160101 20161231 -DST=SPRING"
+          echo "Run workflow: $0 wf spr 20160101"
+          exit 1
+}
+
+#job.properties template file
+app_config_file=app.properties
+env_config_file=../../../config/workspace-env.properties
+job_config_file=job.properties
+source_config_file=source_app.properties
+
+#source in env variables
+source $env_config_file
+
+
+#reset source_config_file
+rm -f  ${source_config_file}
+
+#find all oozie.properties under individual mal code folder and merge them
+find ../../../ \( -path ../../../common -o -path ../../../config -o -path ../../../libs \) -prune -o \
+\( -type f -a -name "app.properties" \)  \
+-exec ../scripts/merge_properties_file.py ${source_config_file} {} \+
+
+#environment properties file
+cat $env_config_file > $job_config_file
+cat $app_config_file >> $job_config_file
+
+#app setup from the source to job.properties
+echo "" >> $job_config_file
+echo "#Configuration from individual sources" >> $job_config_file
+if [ -f ${source_config_file} ]; then
+   cat  ${source_config_file} >> $job_config_file
+fi
+echo "" >> $job_config_file
+
+#define variables
+#start date, always add 1 day to $2
+startDate='""'
+endDate='""'
+PAR_DATE_EXPORT='""'
+MAL_L='""'
+#get podium db name
+MAL=${2^^}
+podium_db_name_acus9=${MAL}
+if [[ ${ENV_NAME_L} == dev* ]]; then
+podium_db_name_acus9=${MAL}_DEV;
+fi
+
+#get runType
+runType=${1,,}
+
+case "$runType" in
+ bundle|coord)
+                if [ "$runType" = "bundle" ]; then
+                        echo "run all"
+                        APPLICATION_PATH='oozie.bundle.application.path=${envRoot}/common/oozie/bundle/bundle.xml'
+
+                        #start date, always add 1 day to $3
+                        input_start_date=${2}
+                        input_end_date=${3}
+                        case ${4,,} in
+            -dst=spring)
+            startDate=$(date -d "now + 4 hours" +"%Y-%m-%dT%H:%MZ")
+             ;;
+            -dst=fall)
+            startDate=$(date -d "now + 5 hours" +"%Y-%m-%dT%H:%MZ")
+            ;;
+            *)
+            echo "Error: invalid DST option"
+            echo ""
+            print_usage
+            ;;
+            esac
+
+        else
+            MAL_L=${2,,}
+            echo "run coordinator for $MAL_L"
+            curDir=`pwd`
+            APPLICATION_PATH=`hdfs dfs -ls $curDir/../../../${MAL_L}/oozie | grep "coordinator.*.xml" | awk '{print "oozie.coord.application.path="$8}'`
+                        input_start_date=${3}
+                        input_end_date=${4}
+                        case ${5,,} in
+            -dst=spring)
+            startDate=$(date -d "now + 4 hours" +"%Y-%m-%dT%H:%MZ")
+             ;;
+            -dst=fall)
+            startDate=$(date -d "now + 5 hours" +"%Y-%m-%dT%H:%MZ")
+            ;;
+            *)
+            echo "Error: invalid DST option"
+            echo ""
+            print_usage
+            ;;
+            esac
+
+        fi
+
+                #start date must be provided
+                if [ ! -n "$input_start_date" ]; then
+                        print_usage
+                else
+            startDate=$(date -u -d"${input_start_date} + 1 days" +"%Y-%m-%dT%H:%MZ")
+                fi
+
+                #start date must be provided
+        if [ ! -n "$input_end_date" ]; then
+            endDate=$(date -u -d"${input_start_date} + 365 days" +"%Y-%m-%dT%H:%MZ")
+        else
+            endDate=$(date -u -d"${input_end_date} + 1 days" +"%Y-%m-%dT%H:%MZ")
+        fi
+        ;;
+
+        wf)
+                #run wf
+                echo "run workflow"
+                MAL_L=${2,,}
+
+                #if the mal code specific folder has workflow.xml, use it. Otherwise, use the common one
+                if  hdfs dfs -test -f /workspace/${PROJECT_NAME_L}/${ENV_NAME_L}/${MAL_L}/oozie/workflow.xml; then
+                        APPLICATION_PATH='oozie.wf.application.path=${envRoot}/${MAL_L}/oozie/workflow.xml'
+                else
+                        APPLICATION_PATH='oozie.wf.application.path=${envRoot}/common/oozie/workflow.xml'
+                fi
+
+                #current run date must be provided
+                if [ ! -n "$3" ]; then
+                        print_usage
+                fi
+
+                #current run date
+                PAR_DATE_EXPORT=$(date -d "${3}" +"%Y%m%d")
+                ;;
+
+        *)
+                print_usage
+                ;;
+esac
+
+n=1
+for appPath in $APPLICATION_PATH
+do
+        jobFile=job.$n.properties
+        cat $job_config_file > $jobFile
+        cat  <<-EOF >> $jobFile
+                        #Runtime setup
+                        MAL_L=${MAL_L}
+                        APPL_CD=\${APPL_CD_${MAL_L^^}}
+                        TOTAL_TABLE_NUM=\${TOTAL_TABLE_NUM_${MAL_L^^}}
+                        startDate=${startDate}
+                        endDate=${endDate}
+                        PAR_DATE_EXPORT=${PAR_DATE_EXPORT}
+                        podium_db_name_acus9=${podium_db_name_acus9}
+                        ${appPath}
+                        EOF
+
+    eval oozie job -oozie=${oozie_base_url} -config $jobFile -run
+        ((n=n+1))
+done
